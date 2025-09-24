@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or 'MGPHot Browser' }}</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1><a href="/">MGPHot Browser</a></h1>
+      <p class="subtitle">
+        Browse and traverse by MGPHot genes; context via Wikidata (where
+        available)
+      </p>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+    <footer>
+      <p>
+        Work-in-progress; no accuracy claims. Data © respective sources. Built
+        with FastAPI.
+      </p>
+    </footer>
+  </body>
+</html>

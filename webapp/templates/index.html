@@ -1,0 +1,71 @@
+{% extends "base.html" %} {% block content %} {% set prev_i = 0 if i <= 0 else
+i-1 %} {% set next_i = count-1 if i+1 >= count else i+1 %}
+<div class="nav">
+  <a class="btn" href="/?i={{ prev_i }}">← Prev</a>
+  <span>#{{ i+1 }} / {{ count }}</span>
+  <a class="btn" href="/?i={{ next_i }}">Next →</a>
+</div>
+
+<section class="item">
+  <h2>
+    {{ item.title or '(untitled)' }}
+    <small>by {{ item.artist or 'Unknown' }}</small>
+  </h2>
+  <p class="meta">
+    Track ID: {{ item.mgphot_track_id or '—' }} | Chart week: {{ item.chart_week
+    or '—' }}
+  </p>
+</section>
+
+<section class="genes">
+  <h3>Genes</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Category</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in genes %}
+      <tr>
+        <td>
+          <span class="label" title="{{ g.description }}">{{ g.name }}</span>
+        </td>
+        <td><span class="tag">{{ g.category }}</span></td>
+        <td>
+          {{ '%.3f'|format(g.value) if g.value is number else (g.value or '—')
+          }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="neighbors">
+  <h3>Similar by gene profile</h3>
+  <div class="cards">
+    {% for n in neighbors %}
+    <a class="card" href="/?i={{ n.__index__ }}">
+      <div class="title">{{ n.title or '(untitled)' }}</div>
+      <div class="artist">{{ n.artist or 'Unknown' }}</div>
+      <div class="meta">{{ n.chart_week or '' }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="context">
+  <h3>Context (Wikidata)</h3>
+  {% if wd.artist or wd.work %}
+  <details open>
+    <summary>Raw Wikidata (debug)</summary>
+    <pre>{{ wd|tojson(indent=2) }}</pre>
+  </details>
+  {% else %}
+  <p>No Wikidata context available.</p>
+  {% endif %}
+</section>
+{% endblock %}
