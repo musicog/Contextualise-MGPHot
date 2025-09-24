@@ -185,7 +185,7 @@ async def index(request: Request, i: int = 0):
         g_name = m.get('name')
         cat = m.get('category', '')
         desc = m.get('description', '')
-        gid = m.get('gene_id')
+        gid = m.get('gene_id') if 'gene_id' in m else None
         try:
             idx_g = int(gid) if pd.notna(gid) else None
         except Exception:
@@ -197,11 +197,20 @@ async def index(request: Request, i: int = 0):
             'name': g_name if isinstance(g_name, str) else (str(idx_g) if idx_g is not None else ''),
             'category': cat,
             'description': desc,
-            'value': value
+            'value': value,
+            'gene_id': idx_g
         })
     # Similar items
     neigh_idx = neighbors_for(item['__index__'], k=10)
-    neighbors = [get_item(j) for j in neigh_idx]
+    neighbors = []
+    for j in neigh_idx:
+        n = get_item(j)
+        try:
+            n_vec = ITEMS.iloc[j].get('gene_vector', None)
+        except Exception:
+            n_vec = None
+        n['gene_vector'] = n_vec if isinstance(n_vec, list) else []
+        neighbors.append(n)
 
     # Wikidata context via aligned.tsv if present
     wd_context: Dict[str, Any] = {}

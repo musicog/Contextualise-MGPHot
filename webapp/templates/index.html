@@ -17,45 +17,420 @@ i-1 %} {% set next_i = count-1 if i+1 >= count else i+1 %}
   </p>
 </section>
 
-<section class="genes">
-  <h3>Genes</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Category</th>
-        <th>Value</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for g in genes %}
-      <tr>
-        <td>
-          <span class="label" title="{{ g.description }}">{{ g.name }}</span>
-        </td>
-        <td><span class="tag">{{ g.category }}</span></td>
-        <td>
-          {{ '%.3f'|format(g.value) if g.value is number else (g.value or '—')
-          }}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
+<div class="main-grid">
+  <section class="genes">
+    <h3>Genes</h3>
+    <div class="controls">
+      <label class="toggle"
+        ><input type="checkbox" id="dynamic-sort" checked /> Sort</label
+      >
+      <div class="indicator" id="compare-indicator">
+        <span class="label" aria-live="polite"></span>
+        <span class="metrics"></span>
+        <svg
+          id="delta-sparkline"
+          width="220"
+          height="28"
+          viewBox="0 0 220 28"
+          preserveAspectRatio="none"
+        ></svg>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="col-name">Name</th>
+          <th class="col-cat">Category</th>
+          <th class="col-val">Value</th>
+          <th class="col-delta">Δ</th>
+          <th class="col-neigh">Neighbor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in genes %} {% set v = g.value if g.value is number else None
+        %}
+        <tr
+          data-gene-id="{{ g.gene_id if g.gene_id is not none else '' }}"
+          data-current="{{ '%.6f'|format(v) if v is not none else '' }}"
+        >
+          <td class="col-name">
+            <span class="label" title="{{ g.description }}">{{ g.name }}</span>
+          </td>
+          <td class="col-cat"><span class="tag">{{ g.category }}</span></td>
+          <td
+            class="col-val heat"
+            style="--val: {{ '%.3f'|format(v) if v is not none else '0.0' }}"
+          >
+            {{ '%.3f'|format(v) if v is not none else '—' }}
+          </td>
+          <td class="col-delta">—</td>
+          <td
+            class="col-neigh"
+            data-gene-id="{{ g.gene_id if g.gene_id is not none else '' }}"
+          >
+            —
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
 
-<section class="neighbors">
-  <h3>Similar by gene profile</h3>
-  <div class="cards">
-    {% for n in neighbors %}
-    <a class="card" href="/?i={{ n.__index__ }}">
-      <div class="title">{{ n.title or '(untitled)' }}</div>
-      <div class="artist">{{ n.artist or 'Unknown' }}</div>
-      <div class="meta">{{ n.chart_week or '' }}</div>
-    </a>
-    {% endfor %}
-  </div>
-</section>
+  <section class="neighbors">
+    <h3>Similar by gene profile</h3>
+    <div class="cards" id="neighbor-cards">
+      {% for n in neighbors %}
+      <div
+        class="card"
+        data-vec="{{ n.gene_vector|tojson }}"
+        data-label='{{ (n.title or "(untitled)") ~ " — " ~ (n.artist or "Unknown") }}'
+      >
+        <div class="title">{{ n.title or '(untitled)' }}</div>
+        <div class="artist">{{ n.artist or 'Unknown' }}</div>
+        <div class="meta">{{ n.chart_week or '' }}</div>
+        <a
+          class="goto"
+          href="/?i={{ n.__index__ }}"
+          title="Follow the link"
+          aria-label="Follow the link"
+          >↗</a
+        >
+      </div>
+      {% endfor %}
+    </div>
+    <p class="hint">
+      Hover a neighbor to preview its values; click to navigate.
+    </p>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const table = document.querySelector(".genes table");
+    const tbody = table.querySelector("tbody");
+    const sorter = document.getElementById("dynamic-sort");
+    let rows = Array.from(tbody.querySelectorAll("tr"));
+    const indicator = document.getElementById("compare-indicator");
+    const indicatorLabel = indicator ? indicator.querySelector(".label") : null;
+    const indicatorMetrics = indicator
+      ? indicator.querySelector(".metrics")
+      : null;
+    const spark = document.getElementById("delta-sparkline");
+
+    function resetCell(cell) {
+      cell.textContent = "—";
+      cell.classList.remove("heat");
+      cell.style.removeProperty("--val");
+    }
+    function populate(vec) {
+      rows.forEach((tr) => {
+        const neighCell = tr.querySelector(".col-neigh");
+        const deltaCell = tr.querySelector(".col-delta");
+        const id = neighCell.getAttribute("data-gene-id");
+        const idx = id ? parseInt(id, 10) : NaN;
+        if (
+          Array.isArray(vec) &&
+          Number.isInteger(idx) &&
+          idx >= 0 &&
+          idx < vec.length
+        ) {
+          const val = vec[idx];
+          if (typeof val === "number") {
+            const clamped = Math.max(0, Math.min(1, val));
+            neighCell.textContent = clamped.toFixed(3);
+            neighCell.classList.add("heat");
+            neighCell.style.setProperty("--val", clamped.toFixed(3));
+            const cur = parseFloat(tr.getAttribute("data-current") || "NaN");
+            deltaCell.textContent = !isNaN(cur)
+              ? Math.abs(cur - clamped).toFixed(3)
+              : "—";
+          } else {
+            resetCell(neighCell);
+            if (deltaCell) deltaCell.textContent = "—";
+          }
+        } else {
+          resetCell(neighCell);
+          if (deltaCell) deltaCell.textContent = "—";
+        }
+      });
+    }
+    function measureMap(elements) {
+      const map = new Map();
+      elements.forEach((el) => map.set(el, el.getBoundingClientRect()));
+      return map;
+    }
+    function playFlip(beforeMap, afterMap, elements) {
+      elements.forEach((el) => {
+        const b = beforeMap.get(el);
+        const a = afterMap.get(el);
+        if (!b || !a) return;
+        const dy = b.top - a.top;
+        if (dy) {
+          // 1) Set initial transform without transition
+          el.style.transition = "none";
+          el.style.transform = `translateY(${dy}px)`;
+          // 2) Force reflow so the browser applies the initial transform
+          void el.getBoundingClientRect();
+          // 3) In next frame, enable transition and reset transform to animate to new spot
+          requestAnimationFrame(() => {
+            el.style.transition = "transform 250ms ease";
+            el.style.transform = "";
+          });
+          // 4) Cleanup transition style when done
+          const cleanup = () => {
+            el.style.transition = "";
+            el.removeEventListener("transitionend", cleanup);
+          };
+          el.addEventListener("transitionend", cleanup);
+        }
+      });
+    }
+    function reorder(ordered) {
+      const before = measureMap(rows);
+      const frag = document.createDocumentFragment();
+      ordered.forEach((el) => frag.appendChild(el));
+      tbody.appendChild(frag);
+      const after = measureMap(ordered);
+      playFlip(before, after, ordered);
+      rows = ordered.slice();
+    }
+    function sortByCurrent() {
+      if (!sorter || !sorter.checked) return;
+      const ordered = rows.slice().sort((a, b) => {
+        const av = parseFloat(a.getAttribute("data-current") || "NaN");
+        const bv = parseFloat(b.getAttribute("data-current") || "NaN");
+        if (isNaN(av) && isNaN(bv)) return 0;
+        if (isNaN(av)) return 1;
+        if (isNaN(bv)) return -1;
+        return bv - av;
+      });
+      reorder(ordered);
+    }
+    function sortByNeighbor(vec) {
+      if (!sorter || !sorter.checked) return;
+      const ordered = rows.slice().sort((a, b) => {
+        const gidA = parseInt(a.getAttribute("data-gene-id") || "-1", 10);
+        const gidB = parseInt(b.getAttribute("data-gene-id") || "-1", 10);
+        const curA = parseFloat(a.getAttribute("data-current") || "NaN");
+        const curB = parseFloat(b.getAttribute("data-current") || "NaN");
+        const nbA =
+          Array.isArray(vec) &&
+          Number.isInteger(gidA) &&
+          gidA >= 0 &&
+          gidA < vec.length
+            ? vec[gidA]
+            : NaN;
+        const nbB =
+          Array.isArray(vec) &&
+          Number.isInteger(gidB) &&
+          gidB >= 0 &&
+          gidB < vec.length
+            ? vec[gidB]
+            : NaN;
+        const dA =
+          typeof nbA === "number" && !isNaN(curA)
+            ? Math.abs(curA - nbA)
+            : Number.POSITIVE_INFINITY;
+        const dB =
+          typeof nbB === "number" && !isNaN(curB)
+            ? Math.abs(curB - nbB)
+            : Number.POSITIVE_INFINITY;
+        // Ascending delta; ties by current value descending
+        if (dA === dB) {
+          if (isNaN(curA) && isNaN(curB)) return 0;
+          if (isNaN(curA)) return 1;
+          if (isNaN(curB)) return -1;
+          return curB - curA;
+        }
+        return dA - dB;
+      });
+      reorder(ordered);
+    }
+    function baseSort() {
+      if (sorter && sorter.checked) {
+        sortByCurrent();
+      } else {
+        // restore original order by gene_id (ascending)
+        const ordered = rows.slice().sort((a, b) => {
+          const gidA = parseInt(a.getAttribute("data-gene-id") || "-1", 10);
+          const gidB = parseInt(b.getAttribute("data-gene-id") || "-1", 10);
+          return gidA - gidB;
+        });
+        reorder(ordered);
+      }
+    }
+    // Initial sort
+    sortByCurrent();
+    const cards = Array.from(
+      document.querySelectorAll("#neighbor-cards .card")
+    );
+    const locked = { vec: null, label: "", card: null };
+    function meanDeltaFor(vec) {
+      if (!Array.isArray(vec)) return null;
+      let sum = 0,
+        n = 0;
+      for (const tr of rows) {
+        const gid = parseInt(tr.getAttribute("data-gene-id") || "-1", 10);
+        const cur = parseFloat(tr.getAttribute("data-current") || "NaN");
+        if (
+          Number.isInteger(gid) &&
+          gid >= 0 &&
+          gid < vec.length &&
+          !isNaN(cur)
+        ) {
+          const nb = vec[gid];
+          if (typeof nb === "number") {
+            const clamped = Math.max(0, Math.min(1, nb));
+            sum += Math.abs(cur - clamped);
+            n += 1;
+          }
+        }
+      }
+      return n > 0 ? sum / n : null;
+    }
+    function updateSparkline(vec) {
+      if (!spark) return;
+      // Clear existing sparkline
+      spark.innerHTML = "";
+      if (!Array.isArray(vec) || rows.length < 2) return;
+      const w = 220,
+        h = 28,
+        padding = 1;
+      const n = rows.length;
+      const step = (w - padding * 2) / (n - 1);
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const tr = rows[i];
+        const gid = parseInt(tr.getAttribute("data-gene-id") || "-1", 10);
+        const cur = parseFloat(tr.getAttribute("data-current") || "NaN");
+        let d = 0;
+        if (
+          Number.isInteger(gid) &&
+          gid >= 0 &&
+          gid < vec.length &&
+          !isNaN(cur)
+        ) {
+          const nb = vec[gid];
+          if (typeof nb === "number") {
+            const clamped = Math.max(0, Math.min(1, nb));
+            d = Math.abs(cur - clamped);
+          }
+        }
+        const x = padding + i * step;
+        const y = h - padding - d * (h - padding * 2);
+        pts.push(`${x},${y}`);
+      }
+      const ns = "http://www.w3.org/2000/svg";
+      const pl = document.createElementNS(ns, "polyline");
+      pl.setAttribute("points", pts.join(" "));
+      pl.setAttribute("fill", "none");
+      pl.setAttribute("stroke", "currentColor");
+      pl.setAttribute("stroke-width", "1.5");
+      spark.appendChild(pl);
+    }
+    function updateIndicator(label, vec, pinned) {
+      if (!indicator) return;
+      const m = meanDeltaFor(vec);
+      const extra = m !== null ? ` — mean Δ: ${m.toFixed(3)}` : "";
+      if (indicatorLabel) {
+        const lab = label || "\u00A0"; // nbsp to preserve height when empty
+        indicatorLabel.textContent = lab;
+        indicatorLabel.setAttribute("title", lab);
+        indicatorLabel.setAttribute("aria-label", lab);
+      }
+      if (indicatorMetrics) indicatorMetrics.textContent = extra;
+      indicator.classList.toggle("pinned", !!pinned);
+      updateSparkline(vec);
+    }
+    cards.forEach((card) => {
+      const vec = JSON.parse(card.getAttribute("data-vec") || "[]");
+      const label = card.getAttribute("data-label") || "";
+      card.addEventListener("mouseenter", () => {
+        if (sorter && sorter.checked) {
+          // Sort first so sparkline follows sorted rows
+          sortByNeighbor(vec);
+          populate(vec);
+          updateIndicator(label, vec, false);
+        } else {
+          // No sorting: populate and draw unsorted sparkline
+          populate(vec);
+          updateIndicator(label, vec, false);
+        }
+      });
+      card.addEventListener("focus", () => {
+        if (sorter && sorter.checked) {
+          sortByNeighbor(vec);
+          populate(vec);
+          updateIndicator(label, vec, false);
+        } else {
+          populate(vec);
+          updateIndicator(label, vec, false);
+        }
+      });
+      card.addEventListener("click", (e) => {
+        if (e.target && e.target.closest("a.goto")) return; // allow navigation via icon
+        e.preventDefault();
+        // Toggle unlock if this card is already locked
+        if (card.classList.contains("locked")) {
+          card.classList.remove("locked");
+          locked.vec = null;
+          locked.label = "";
+          locked.card = null;
+          updateIndicator("", null, false);
+          if (spark) spark.innerHTML = "";
+          populate(null);
+          baseSort();
+          return;
+        }
+        // Lock this card
+        cards.forEach((c) => c.classList.remove("locked"));
+        locked.vec = vec;
+        locked.label = label;
+        locked.card = card;
+        card.classList.add("locked");
+        if (sorter && sorter.checked) {
+          // Sort first so sparkline reflects sorted rows
+          sortByNeighbor(vec);
+          populate(vec);
+          updateIndicator(label, vec, true);
+        } else {
+          // No sorting: keep unsorted sparkline
+          populate(vec);
+          updateIndicator(label, vec, true);
+        }
+      });
+    });
+    const container = document.getElementById("neighbor-cards");
+    if (container)
+      container.addEventListener("mouseleave", () => {
+        if (locked.vec && locked.card) {
+          locked.card.classList.add("locked");
+          if (sorter && sorter.checked) {
+            sortByNeighbor(locked.vec);
+            populate(locked.vec);
+            updateIndicator(locked.label, locked.vec, true);
+          } else {
+            populate(locked.vec);
+            updateIndicator(locked.label, locked.vec, true);
+          }
+        } else {
+          updateIndicator("", null, false);
+          if (spark) spark.innerHTML = "";
+          populate(null);
+          baseSort();
+        }
+      });
+    const toggle = document.getElementById("dynamic-sort");
+    if (toggle)
+      toggle.addEventListener("change", () => {
+        if (toggle.checked) {
+          sortByCurrent();
+        } else {
+          baseSort();
+        }
+      });
+  })();
+</script>
 
 <section class="context">
   <h3>Context (Wikidata)</h3>

@@ -17,11 +17,55 @@ main { padding: 1rem 1.25rem; }
 .genes th { background: #f3f4f6; text-align: left; }
 .genes .tag { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 999px; background: #e5e7eb; color: #374151; font-size: 0.8rem; }
 .genes .desc { color: #4b5563; }
+.genes tbody tr { will-change: transform; }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
-.card { display: block; background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem; text-decoration: none; color: inherit; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+.main-grid { display: grid; grid-template-columns: 620px minmax(0, 1fr); gap: 1rem; align-items: start; }
+.neighbors { min-width: 0; }
+
+/* Narrow first two columns; give value column more room */
+.genes th.col-name, .genes td.col-name { width: 28%; }
+.genes th.col-cat, .genes td.col-cat { width: 18%; }
+.genes th.col-val, .genes td.col-val { width: auto; }
+.genes th.col-delta, .genes td.col-delta { width: 12%; text-align: right; color: #374151; }
+.genes th.col-neigh, .genes td.col-neigh { width: 18%; text-align: right; color: #374151; }
+
+/* Heat background for value: blue (0) -> red (1) */
+.genes td.heat {
+	/* Expect --val in [0,1]; clamp visually via min/max */
+	--v: clamp(0, var(--val, 0), 1);
+	/* HSL: 240deg (blue) to 0deg (red) */
+	--h: calc(240deg - 240deg * var(--v));
+	background: linear-gradient(90deg, hsla(var(--h), 85%, 60%, 0.25), hsla(var(--h), 85%, 60%, 0.25));
+}
+
+/* Improve contrast for very light backgrounds */
+.genes td.heat { position: relative; }
+.genes td.heat::after {
+	content: '';
+	position: absolute; inset: 0;
+	border-left: 4px solid hsla(var(--h), 85%, 45%, 0.6);
+	pointer-events: none;
+}
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; min-width: 0; }
+.card { display: block; position: relative; background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem; text-decoration: none; color: inherit; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: border-color 120ms ease, box-shadow 120ms ease; }
+.card:hover { border-color: #93c5fd; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12); }
+.card.locked { border-color: #2563eb; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2); }
 .card .title { font-weight: 600; }
 .card .artist { color: #6b7280; font-size: 0.95rem; }
+.card .title, .card .artist { overflow-wrap: anywhere; word-break: break-word; }
 .card .meta { color: #9ca3af; font-size: 0.85rem; }
+.card .goto { position: absolute; right: 8px; bottom: 8px; text-decoration: none; font-size: 1rem; }
+
+.controls { display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+.indicator { color: #374151; font-size: 0.9rem; opacity: 0.8; display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: 1.6em 28px; gap: 0.5rem 0.5rem; align-items: center; }
+.indicator .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.indicator .metrics { white-space: nowrap; justify-self: start; color: #4b5563; }
+.indicator svg { grid-column: 1 / -1; display: block; color: #6b7280; height: 28px; justify-self: end; width: 220px; }
+.indicator.pinned { font-weight: 600; opacity: 1; }
 
 .context pre { white-space: pre-wrap; word-break: break-word; background: #111827; color: #d1d5db; padding: 1rem; border-radius: 8px; }
+
+@media (max-width: 900px) {
+	.main-grid { grid-template-columns: 1fr; }
+}
